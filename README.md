@@ -1,180 +1,140 @@
-Here's an updated README with Postman information included:
+# Askify — PDF Question-Answering Service
 
----
+Askify is a backend service that lets you upload PDF documents, index their content, and ask natural-language questions about them. It combines document parsing, embeddings, and retrieval-augmented generation (RAG) so queries are answered using the actual content of the uploaded PDFs.
 
-# Askify - PDF Question-Answering Service
+This README explains what Askify does, how to run it locally, and how to use its upload and question-answering features.
 
-Askify is a backend service that allows users to upload PDF documents and ask questions based on the content within these documents. It utilizes LangChain for natural language processing and ChromaDB for document embeddings and retrieval.
+## Key capabilities
 
-## Table of Contents
+- Upload PDF documents and extract their text.
+- Store extracted text and metadata in SQLite.
+- Create embeddings and perform similarity search with ChromaDB.
+- Answer user questions about a specific PDF using LangChain-powered LLM calls.
+- Real-time Q&A using a WebSocket endpoint.
 
-- [Features](#features)
-- [Technologies Used](#technologies-used)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Project Structure](#project-structure)
-- [API Documentation](#api-documentation)
-- [PDF Upload](#pdf-upload)
-- [Question Answering](#question-answering)
-- [Testing with Postman](#testing-with-postman)
-- [License](#license)
+## Technology overview
 
-## Features
+- FastAPI — API framework
+- SQLite — lightweight storage for extracted text and metadata
+- LangChain — orchestration of LLM calls and retrieval logic
+- ChromaDB — vector store for embeddings and similarity search
+- PyPDF2 — PDF parsing and text extraction
+- WebSockets — real-time question/answer transport
 
-- Upload and store PDF documents.
-- Text extraction and storage in SQLite database.
-- Real-time question-answering capability using LangChain's language model.
-- Retrieval-Augmented Generation (RAG) architecture with ChromaDB for efficient document search and retrieval.
+## Quick start (local)
 
-## Technologies Used
+1. Clone the repository
+```bash
+git clone https://github.com/skshareef41319s/Askify.git
+cd Askify
+```
 
-- **FastAPI**: Web framework for building APIs.
-- **SQLite**: Lightweight relational database to store PDF data.
-- **LangChain**: Framework for integrating language models in applications.
-- **ChromaDB**: Vector database for document embeddings and similarity search.
-- **PyPDF2**: PDF parsing and text extraction.
+2. Install dependencies
+```bash
+pip install -r requirements.txt
+```
 
-## Installation
+3. Create a `.env` file in the project root and add your credentials
+Example:
+```
+GOOGLE_API_KEY=<your_gemini_api_key>
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=<your_langchain_api_key>
+```
+Adjust the variables to match the providers you use. Keep these secrets out of version control.
 
-1. **Clone the Repository**
+4. Run the application
+```bash
+uvicorn main:app --reload
+```
+The API will be available at: http://127.0.0.1:8000
 
-   ```bash
-   git clone https://github.com/theshashank1/Askify.git
-   cd Askify
-   ```
+## How it works (high level)
 
-2. **Install Dependencies**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Set Up Environment Variables**
-
-   Create a `.env` file in the root directory and add any required configurations.
-    
-   ```dotenv
-   GOOGLE_API_KEY = <Gemini API_Key>
-   LANGCHAIN_TRACING_V2 = true
-   LANGCHAIN_API_KEY = <Langchain API_Key>
-   ```
-   Note: Obtain the LangChain API key from LangSmith.
-
-4. **Run the Application**
-
-   Start the FastAPI application with Uvicorn.
-
-   ```bash
-   uvicorn main:app --reload
-   ```
+1. Upload: a PDF is uploaded to the server. The service extracts text and splits it into chunks suitable for embedding.
+2. Index: chunks are embedded and stored in ChromaDB. Metadata and mapping to the original PDF are saved in SQLite.
+3. Query: when a user asks a question, related document chunks are retrieved via similarity search and provided to the LLM via LangChain to generate a grounded answer.
+4. WebSocket: WebSocket endpoints enable streaming or real-time question/answer interactions.
 
 ## Usage
 
-### 1. Upload a PDF
+### Upload a PDF
+Use curl, Postman, or a similar client to upload a PDF:
+```bash
+curl -X POST "http://127.0.0.1:8000/upload" -F "file=@/path/to/document.pdf"
+```
+Example JSON response:
+```json
+{
+  "filename": "document.pdf",
+  "message": "PDF uploaded and processed",
+  "id": "bb76a347-644e-41ff-b63b-a569a63b45d9"
+}
+```
+Save the returned `id` — it identifies the uploaded document for later queries.
 
-   Use an HTTP client (like Postman or curl) to upload a PDF document to the `/upload` endpoint.
+### Ask questions (WebSocket)
+Connect to the WebSocket endpoint and send questions tied to a document id:
+```js
+const ws = new WebSocket("ws://127.0.0.1:8000/ws/question_answer/<document_id>");
 
-   ```bash
-   curl -X POST "http://127.0.0.1:8000/upload" -F "file=@/path/to/your/file.pdf"
-   ```
+ws.onopen = () => {
+  ws.send(JSON.stringify({ question: "What is the main topic of this document?" }));
+};
 
-### 2. Ask Questions
+ws.onmessage = (event) => {
+  console.log("Answer:", event.data);
+};
+```
+The server will return answers composed using the retrieved document context and the configured LLM.
 
-   Connect to the WebSocket endpoint `/ws/question_answer/{document_id}`, where `{document_id}` is the ID of an uploaded PDF document.
+## API endpoints (summary)
 
-   Example:
+- POST /upload — Upload and process a PDF
+- GET  /documents — (optional) List uploaded documents / metadata
+- WS   /ws/question_answer/{document_id} — WebSocket endpoint for asking questions about a specific document
 
-   ```javascript
-   const ws = new WebSocket("ws://localhost:8000/ws/question_answer/883d5e93-d2c7-4ad8-b161-02398d24f138");
+Check the source routers for exact routes and expected request/response shapes.
 
-   ws.onopen = () => {
-     ws.send("What is the main topic of this document?");
-   };
+## Project structure
 
-   ws.onmessage = (event) => {
-     console.log("Answer:", event.data);
-   };
-   ```
-
-   Note: You can also connect to the WebSocket using Postman.
-
-## Project Structure
-
-```plaintext
+```
 Askify/
-├── chroma_db/                # Directory for ChromaDB files and embeddings
-├── routers/                  # API route handlers
-│   ├── pdf_upload.py         # Endpoint for uploading PDFs
-│   └── question_answer.py    # Endpoint for question answering
-├── upload/                   # Directory to store uploaded PDFs
-├── utils/                    # Utility functions and helper classes
-│   └── pdf_processor.py      # PDF text extraction logic
-├── database.py               # SQLite database setup and interaction
-├── pdf_data.db               # SQLite database file
-├── llm.py                    # Language model integration with LangChain
-├── rag.py                    # Retrieval-Augmented Generation (RAG) logic
-├── main.py                   # FastAPI app initialization
-├── models.py                 # Pydantic models for data validation
-├── requirements.txt          # Python dependencies
-└── .env                      # Environment variables (not included in repo)
+├── chroma_db/                # ChromaDB files and embeddings
+├── routers/                  # FastAPI route handlers
+│   ├── pdf_upload.py         # PDF upload and processing
+│   └── question_answer.py    # WebSocket question-answering logic
+├── upload/                   # Stored uploaded PDFs
+├── utils/                    # Utility functions (pdf parsing, chunking, helpers)
+│   └── pdf_processor.py
+├── database.py               # SQLite setup and helper functions
+├── pdf_data.db               # SQLite database (generated at runtime)
+├── llm.py                    # LangChain/LLM interface and helpers
+├── rag.py                    # Retrieval / RAG orchestration logic
+├── main.py                   # FastAPI app entrypoint
+├── models.py                 # Pydantic models and validation schemas
+├── requirements.txt
+└── .env                      # Environment variables (not committed)
 ```
 
-## API Documentation
+## Development notes & best practices
 
-### PDF Upload
+- Secrets: keep API keys and sensitive configs in environment variables or a secrets manager.
+- Production: use a managed vector store or persistent Chroma deployment for reliability; consider a hosted database for SQLite replacement (Postgres, etc.).
+- Embeddings: choose the embedding model and chunk size carefully—too small or too large chunks impact retrieval relevance.
+- Rate limits & cost: LLM calls can be costly. Add caching, rate limiting, and request batching in production.
+- Security: validate uploads, enforce file size limits, and scan for malicious files. Restrict WebSocket origins if exposing publicly.
+- Logging and monitoring: add structured logs and health checks for long-running services.
 
-- **Endpoint**: `/upload`
-- **Method**: `POST`
-- **Parameters**:
-  - `file`: PDF file to upload (as form-data).
-- **Response**:
-  - JSON object with document ID and success message.
+## Troubleshooting
 
-Example Response:
-```json
-{
-    "filename": "example.pdf",
-    "message": "PDF uploaded and processed",
-    "id": "bb76a347-644e-41ff-b63b-a569a63b45d9"
-}
-```
+- If embedding or LLM calls fail, verify API keys and provider availability.
+- If PDF text is missing or garbled, check the PDF parsing step and try alternate chunking strategies (e.g., overlap size).
+- For WebSocket connection issues, confirm the server is running and the correct URL/port are used.
 
-### Question Answering
+## Contributing
 
-- **Endpoint**: `/ws/question_answer/{document_id}`
-- **Method**: WebSocket
-- **Parameters**:
-  - `document_id`: The ID of the document to query.
-- **Response**:
-  - Real-time answer from LangChain’s Gemini model based on the content of the specified PDF.
-
-Example Response:
-```json
-{
-  "answer": "This document discusses the basics of data science."
-}
-```
-
-## Testing with Postman
-
-A Postman workspace has been created for testing Askify's API endpoints and WebSocket functionality. The workspace contains two collections:
-
-1. **Askify API Collection**:
-   - **Upload PDF**: `POST /upload` — Uploads a PDF file and returns a `document_id`.
-   - **Get Document Metadata** (optional): `GET /document/{document_id}` — Retrieves metadata of a specific PDF.
-
-2. **Askify Web Sockets Collection**:
-   - **Question Answer WebSocket**: `/ws/question_answer/{document_id}` — Allows real-time question-answering on the uploaded PDF by sending a question and receiving an answer instantly.
-
-You can access the Postman workspace here: [Askify Postman Workspace](https://www.postman.com/flight-geologist-95162013/askify).
-
-### Setup
-
-- **Environment Variables**: Include `document_id` for easy testing.
-- **Usage**: Start with uploading a PDF to get a `document_id`, then use it for WebSocket questions.
-
-## License
-
-This project is licensed under the MIT License.
-
---- 
+Contributions are welcome. Suggested workflow:
+1. Fork the repo
+2. Create a branch with a clear name (feature/..., fix/...)
+3. Commit changes and open a pull request with a description of the change
